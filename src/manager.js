@@ -39,7 +39,10 @@ export class SessionManager {
       this.sessions.set(name, session);
       await this.persist();
     }
-    await session.start();
+    // Don't open a second socket on top of a healthy one (avoids WA "conflict").
+    if (session.status !== 'connected') {
+      await session.start();
+    }
     return session;
   }
 

@@ -38,6 +38,18 @@ export class Session {
 
   async start() {
     this.stopping = false;
+    clearTimeout(this.reconnectTimer);
+    // Ensure only ONE live socket per number — a second socket triggers a WA
+    // "conflict" (replaced) that loops and eventually logs the device out.
+    if (this.sock) {
+      try {
+        this.sock.ev.removeAllListeners();
+        this.sock.end(undefined);
+      } catch {
+        // already closed
+      }
+      this.sock = null;
+    }
     await fs.mkdir(this.authPath, { recursive: true });
     const { state, saveCreds } = await useMultiFileAuthState(this.authPath);
     const { version } = await fetchLatestBaileysVersion();
