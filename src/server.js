@@ -60,6 +60,11 @@ export function buildServer(manager) {
     res.json({ ok: true, wa_message_id: result?.key?.id ?? null });
   }));
 
+  app.post('/sessions/:name/pair', wrap(async (req, res) => {
+    const code = await requireSession(req).requestPairingCode(req.body.phone);
+    res.json({ ok: true, code });
+  }));
+
   app.post('/sessions/:name/group', wrap(async (req, res) => {
     const { subject, participants } = req.body;
     res.json(await requireSession(req).createGroup(subject, participants ?? []));

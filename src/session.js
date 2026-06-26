@@ -210,6 +210,16 @@ export class Session {
     }
   }
 
+  // Request an 8-char pairing code (no QR scan needed). $phone = digits only, with country code.
+  async requestPairingCode(phone) {
+    if (!this.sock) throw new Error(`session ${this.name} has no socket`);
+    if (this.sock.authState?.creds?.registered) throw new Error('already registered');
+    const digits = String(phone).replace(/[^0-9]/g, '');
+    const code = await this.sock.requestPairingCode(digits);
+    this.log.info({ session: this.name, phone: digits }, 'pairing code requested');
+    return code;
+  }
+
   async sendText(to, text, { quoted } = {}) {
     this.ensureReady();
     return this.sock.sendMessage(toJid(to), { text }, quoted ? { quoted } : {});
