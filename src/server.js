@@ -51,10 +51,12 @@ export function buildServer(manager) {
 
   app.post('/sessions/:name/send', wrap(async (req, res) => {
     const session = requireSession(req);
-    const { to, text, media, quoted } = req.body;
-    const result = media
-      ? await session.sendMedia(to, media)
-      : await session.sendText(to, text, { quoted });
+    const { to, text, media, quoted, interactive } = req.body;
+    const result = interactive
+      ? await session.sendInteractive(to, interactive)
+      : media
+        ? await session.sendMedia(to, media)
+        : await session.sendText(to, text, { quoted });
     res.json({ ok: true, wa_message_id: result?.key?.id ?? null });
   }));
 

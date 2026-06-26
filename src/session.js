@@ -229,6 +229,51 @@ export class Session {
     return this.sock.sendMessage(jid, content);
   }
 
+  // Send a native interactive message (in-chat menu). Shape:
+  // { body, footer?, title?, buttons:[{type:'quick_reply'|'cta_url'|'single_select', text, ...}],
+  //   or sections:[{title, rows:[{header,title,description,id}]}] for a selection list }
+  async sendInteractive(to, spec = {}) {
+    this.ensureReady();
+    const jid = toJid(to);
+    const buttons = [];
+
+    if (Array.isArray(spec.sections) && spec.sections.length) {
+      // Single-select list (the "menu, client picks" use case).
+      buttons.push({
+        name: 'single_select',
+        buttonParamsJson: JSON.stringify({
+          title: spec.button || 'Ver opciones',
+          sections: spec.sections.map((s) => ({
+            title: s.title || '',
+            rows: (s.rows || []).map((r) => ({
+              header: r.header || '',
+              title: r.title || '',
+              description: r.description || '',
+              id: r.id || r.title || '',
+            })),
+          })),
+        }),
+      });
+    }
+    for (const b of spec.buttons || []) {
+      if (b.type === 'cta_url') {
+        buttons.push({ name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: b.text, url: b.url, merchant_url: b.url }) });
+      } else {
+        buttons.push({ name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id || b.text }) });
+      }
+    }
+
+    const content = {
+      interactiveMessage: {
+        body: { text: spec.body || '' },
+        footer: spec.footer ? { text: spec.footer } : undefined,
+        header: spec.title ? { title: spec.title, subtitle: spec.subtitle || '', hasMediaAttachment: false } : undefined,
+        nativeFlowMessage: { buttons, messageVersion: 1 },
+      },
+    };
+    return this.sock.sendMessage(jid, content);
+  }
+
   async createGroup(subject, participants = []) {
     this.ensureReady();
     const jids = participants.map(toJid);

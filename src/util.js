@@ -60,6 +60,27 @@ export function describeMessage(message) {
     return { type: 'contact', text: m.contactMessage.displayName ?? null, caption: null, media: null };
   }
 
+  // Client picked an option from an interactive menu / native flow → treat as text.
+  if (m.listResponseMessage) {
+    const r = m.listResponseMessage;
+    return { type: 'text', text: r.title ?? r.singleSelectReply?.selectedRowId ?? '', caption: null, media: null };
+  }
+  if (m.buttonsResponseMessage) {
+    const r = m.buttonsResponseMessage;
+    return { type: 'text', text: r.selectedDisplayText ?? r.selectedButtonId ?? '', caption: null, media: null };
+  }
+  if (m.interactiveResponseMessage) {
+    let picked = m.interactiveResponseMessage.body?.text ?? '';
+    try {
+      const p = JSON.parse(m.interactiveResponseMessage.nativeFlowResponseMessage?.paramsJson ?? '{}');
+      picked = p.id || p.selected_id || p.title || picked;
+    } catch (e) { /* keep body text */ }
+    return { type: 'text', text: picked, caption: null, media: null };
+  }
+  if (m.templateButtonReplyMessage) {
+    return { type: 'text', text: m.templateButtonReplyMessage.selectedDisplayText ?? '', caption: null, media: null };
+  }
+
   return { type: 'system', text: null, caption: null, media: null };
 }
 
