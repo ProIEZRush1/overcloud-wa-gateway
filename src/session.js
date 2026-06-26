@@ -30,6 +30,7 @@ export class Session {
     this.reconnectAttempts = 0;
     this.reconnectTimer = null;
     this.stopping = false;
+    this.heartbeat = null;
   }
 
   get authPath() {
@@ -67,6 +68,14 @@ export class Session {
     this.sock.ev.on('connection.update', (u) => this.onConnectionUpdate(u));
     this.sock.ev.on('messages.upsert', (u) => this.onMessagesUpsert(u));
     this.sock.ev.on('messages.update', (u) => this.onMessagesUpdate(u));
+
+    // Heartbeat: re-assert the current status periodically so a single dropped status webhook
+    // self-heals (otherwise the panel can show "connected" while the device is actually offline).
+    if (!this.heartbeat) {
+      this.heartbeat = setInterval(() => {
+        laravel.status({ session: this.name, status: this.status, jid: this.me?.id ?? null, phone: this.phone() });
+      }, 60_000);
+    }
 
     this.setStatus('connecting');
     return this;
@@ -112,6 +121,24 @@ export class Session {
         this.setStatus('logged_out');
         return;
       }
+
+      // A second socket REPLACED us (connectionReplaced/440), or the session is bad/forbidden.
+      // Reconnecting here makes two sockets ping-pong the device into a real logout — so stop,
+      // surface 'replaced', and let an explicit restart bring it back.
+      const terminalCodes = [DisconnectReason.connectionReplaced, DisconnectReason.badSession, DisconnectReason.forbidden]
+        .filter((c) => c !== undefined);
+      if (terminalCodes.includes(statusCode)) {
+        this.log.warn({ statusCode }, 'terminal disconnect — not auto-reconnecting');
+        this.setStatus('replaced');
+        return;
+      }
+
+      // Cap reconnect attempts so a hard-down upstream doesn't loop forever (and silently).
+      if (this.reconnectAttempts >= (config.maxReconnectAttempts ?? 20)) {
+        this.log.error({ attempts: this.reconnectAttempts }, 'giving up reconnect after too many attempts');
+        this.setStatus('disconnected');
+        return;
+      }
       if (!this.stopping) this.scheduleReconnect();
     }
   }
@@ -126,7 +153,10 @@ export class Session {
   }
 
   async onMessagesUpsert({ messages, type }) {
-    if (type !== 'notify') return;
+    // 'notify' = live messages; 'append' = backlog synced on reconnect (messages that arrived
+    // while we were down). Process both so a deploy/restart never loses inbound messages — the
+    // panel dedupes by wa_message_id, so any overlap is harmless.
+    if (type !== 'notify' && type !== 'append') return;
     for (const msg of messages) {
       try {
         await this.forwardMessage(msg);
@@ -186,7 +216,16 @@ export class Session {
       await fs.writeFile(stored, buffer);
       meta.stored_path = stored;
 
-      if (buffer.length <= config.maxInlineMedia) meta.base64 = buffer.toString('base64');
+      if (buffer.length <= config.maxInlineMedia) {
+        meta.base64 = buffer.toString('base64');
+      } else {
+        // Too big to inline → the panel currently can't ingest it (it reads base64 only). Don't drop
+        // it silently: log it with the on-disk path so it's recoverable and the gap is visible.
+        this.log.warn(
+          { size: buffer.length, max: config.maxInlineMedia, stored, wa_message_id: msg.key.id },
+          'media exceeds inline limit — forwarded WITHOUT base64 (kept on disk only)',
+        );
+      }
       return meta;
     } catch (err) {
       this.log.warn({ err: err.message }, 'media download failed');
@@ -335,6 +374,8 @@ export class Session {
   async stop() {
     this.stopping = true;
     clearTimeout(this.reconnectTimer);
+    clearInterval(this.heartbeat);
+    this.heartbeat = null;
     try {
       this.sock?.end?.(undefined);
     } catch { /* noop */ }

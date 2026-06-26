@@ -52,25 +52,42 @@ async function bufferPayload(pathname, payload) {
 
 // Periodically re-deliver buffered messages once the panel is reachable again.
 // The panel dedupes by wa_message_id, so re-posting an already-delivered message is safe.
+let flushing = false;
 async function flushBuffer() {
-  let files = [];
+  // Don't let a slow pass overlap the next tick — the POST timeout (20s) exceeds the 15s interval,
+  // and two passes re-posting the same not-yet-unlinked file would duplicate the message + reply.
+  if (flushing) return;
+  flushing = true;
   try {
-    files = await fs.readdir(bufferDir);
-  } catch {
-    return; // no buffer yet
-  }
-  for (const f of files) {
-    if (!f.endsWith('.json')) continue;
-    const fp = path.join(bufferDir, f);
+    let files;
     try {
-      const { pathname, payload } = JSON.parse(await fs.readFile(fp, 'utf8'));
-      await tryPost(pathname, payload);
-      await fs.unlink(fp);
-      logger.info({ file: f }, 'redelivered buffered inbound');
-    } catch (e) {
-      // panel still down or this one failed — leave it for the next pass
-      break;
+      files = await fs.readdir(bufferDir);
+    } catch {
+      return; // no buffer yet
     }
+    // Recover any file left "claimed" by a crashed previous pass.
+    for (const f of files.filter((f) => f.endsWith('.processing'))) {
+      try { await fs.rename(path.join(bufferDir, f), path.join(bufferDir, f.replace(/\.processing$/, ''))); } catch {}
+    }
+    const pending = (await fs.readdir(bufferDir)).filter((f) => f.endsWith('.json'));
+    for (const f of pending) {
+      const fp = path.join(bufferDir, f);
+      const claim = `${fp}.processing`;
+      // Claim the file by renaming so it can never be picked up twice.
+      try { await fs.rename(fp, claim); } catch { continue; }
+      try {
+        const { pathname, payload } = JSON.parse(await fs.readFile(claim, 'utf8'));
+        await tryPost(pathname, payload);
+        await fs.unlink(claim);
+        logger.info({ file: f }, 'redelivered buffered inbound');
+      } catch (e) {
+        // panel still down or this one failed — un-claim and stop; retry next pass.
+        try { await fs.rename(claim, fp); } catch {}
+        break;
+      }
+    }
+  } finally {
+    flushing = false;
   }
 }
 

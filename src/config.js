@@ -19,4 +19,6 @@ export const config = {
   maxInlineMedia: parseInt(process.env.MAX_INLINE_MEDIA ?? String(16 * 1024 * 1024), 10),
   // Reconnect backoff ceiling (ms).
   maxReconnectDelay: 30_000,
+  // Give up auto-reconnecting after this many consecutive failed attempts (avoids silent infinite loops).
+  maxReconnectAttempts: parseInt(process.env.MAX_RECONNECT_ATTEMPTS ?? '20', 10),
 };
