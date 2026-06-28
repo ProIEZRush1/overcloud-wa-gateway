@@ -171,9 +171,14 @@ export class Session {
     const remoteJid = msg.key?.remoteJid;
     if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@newsletter')) return;
     if (msg.message?.protocolMessage || msg.message?.senderKeyDistributionMessage) return;
+    // Reactions (👍 etc.), poll updates, edits and other non-message events are NOT messages — never
+    // forward them, so the bot doesn't reply to a reaction.
+    if (msg.message?.reactionMessage || msg.message?.pollUpdateMessage || msg.message?.editedMessage) return;
 
     const described = describeMessage(msg.message);
     const isGroup = remoteJid.endsWith('@g.us');
+    // Nothing meaningful (empty/system event) → don't forward it as a client message.
+    if (described.type === 'system' && !described.text && !described.media) return;
 
     const payload = {
       session: this.name,
