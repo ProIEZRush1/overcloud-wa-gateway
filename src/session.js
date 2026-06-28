@@ -68,6 +68,7 @@ export class Session {
     this.sock.ev.on('connection.update', (u) => this.onConnectionUpdate(u));
     this.sock.ev.on('messages.upsert', (u) => this.onMessagesUpsert(u));
     this.sock.ev.on('messages.update', (u) => this.onMessagesUpdate(u));
+    this.sock.ev.on('group-participants.update', (u) => this.onGroupParticipantsUpdate(u));
 
     // Heartbeat: re-assert the current status periodically so a single dropped status webhook
     // self-heals (otherwise the panel can show "connected" while the device is actually offline).
@@ -239,6 +240,17 @@ export class Session {
       if (status === undefined) continue;
       laravel.receipt({ session: this.name, wa_message_id: u.key?.id, chat_jid: u.key?.remoteJid, status });
     }
+  }
+
+  // Someone joined/left a group → tell the panel (so it can welcome a client who joins via link,
+  // since WhatsApp doesn't show messages sent to the group before the member joined).
+  onGroupParticipantsUpdate({ id, participants, action }) {
+    laravel.groupEvent({
+      session: this.name,
+      group_jid: id,
+      participants: Array.isArray(participants) ? participants : [],
+      action,
+    });
   }
 
   // ---- outbound actions -------------------------------------------------

@@ -97,4 +97,5 @@ export const laravel = {
   inbound: (payload) => post('/api/wa/inbound', payload, { buffer: true }),
   status: (payload) => post('/api/wa/status', payload),
   receipt: (payload) => post('/api/wa/receipt', payload),
+  groupEvent: (payload) => post('/api/wa/group-event', payload),
 };
