@@ -281,6 +281,15 @@ export class Session {
     return this.sock.sendMessage(toJid(to), { text }, quoted ? { quoted } : {});
   }
 
+  // React to a message (e.g. a 🕐 clock while the bot is "thinking"). An empty emoji removes the reaction.
+  async sendReaction(to, messageId, emoji, { fromMe = false, participant } = {}) {
+    this.ensureReady();
+    const jid = toJid(to);
+    const key = { remoteJid: jid, id: messageId, fromMe: !!fromMe };
+    if (participant) key.participant = toJid(participant);
+    return this.sock.sendMessage(jid, { react: { text: emoji || '', key } });
+  }
+
   async sendMedia(to, { base64, mimetype, fileName, caption, kind }) {
     this.ensureReady();
     const buffer = Buffer.from(base64, 'base64');

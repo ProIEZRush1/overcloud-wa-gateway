@@ -60,6 +60,13 @@ export function buildServer(manager) {
     res.json({ ok: true, wa_message_id: result?.key?.id ?? null });
   }));
 
+  app.post('/sessions/:name/react', wrap(async (req, res) => {
+    const session = requireSession(req);
+    const { to, messageId, emoji, fromMe, participant } = req.body;
+    const result = await session.sendReaction(to, messageId, emoji, { fromMe, participant });
+    res.json({ ok: true, wa_message_id: result?.key?.id ?? null });
+  }));
+
   app.post('/sessions/:name/pair', wrap(async (req, res) => {
     const code = await requireSession(req).requestPairingCode(req.body.phone);
     res.json({ ok: true, code });
